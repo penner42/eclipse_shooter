@@ -1,8 +1,12 @@
 import gphoto2 as gp
 import csv 
-from datetime import datetime
+from datetime import *
 import configparser as cp
 import time
+from dateutil.relativedelta import relativedelta   
+import math
+from pydub import AudioSegment
+from pydub.playback import play
 
 class config(cp.ConfigParser):
     def __init__(self):
@@ -38,6 +42,12 @@ class Camera():
 
         except gp.GPhoto2Error as e:
             print(e)
+
+    def dialmode(self):
+        try:
+            return self.camera.get_single_config("autoexposuremodedial").get_value()
+        except gp.GPhoto2Error as e:
+            return ""
 
     def shoot(self, shutterspeed, bracket):
         captured = False
@@ -109,16 +119,115 @@ class EclipseData():
 
         f.close()
         
+def seconds_to(t):
+    return (t - datetime.now()).total_seconds()
 
 if __name__ == '__main__':
     e = EclipseData()
     c = Camera()
-    # while True:
-    #     try:
-    #         c.shoot("1/6400")
-    #     except KeyboardInterrupt as e:
-    #         exit()
-    c.shoot("1/5000", None)
-    c.shoot("1/8000", "+/- 1")
-    c.shoot("1/6400", None)
-    c.shoot("1/2500", None)
+    remove_filter_audio = AudioSegment.from_mp3("remove_filter.mp3")
+    replace_filter_audio = AudioSegment.from_mp3("replace_filter.mp3")
+    
+    partial_1       = e.partial_start  - relativedelta(seconds=60)
+    remove_filter   = e.totality_start - relativedelta(seconds=30)
+    bailys_beads_1  = e.totality_start - relativedelta(seconds=15)
+    totality        = e.totality_start + relativedelta(seconds=15)
+    bailys_beads_2  = e.totality_end   - relativedelta(seconds=15)
+    partial_2       = e.totality_end   + relativedelta(seconds=15)
+    replace_filter  = e.totality_end   + relativedelta(seconds=20)
+    end             = e.partial_end    + relativedelta(seconds=60)
+
+    print("Now              : " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    print("Partial start    : %s (%s)" % (partial_1, e.partial_start))
+    print("Remove filter    : %s"      % remove_filter)
+    print("Bailey's beads 1 : %s"      % bailys_beads_1)
+    print("Totality start   : %s (%s)" % (totality, e.totality_start))
+    print("Bailey's beads 2 : %s"      % bailys_beads_2)
+    print("Replace filter   : %s"      % replace_filter)
+    print("Partial ends     : %s (%s)" % (end, e.partial_end))
+
+    dialmode = ""
+    while dialmode != "Manual":
+        dialmode = c.dialmode()
+        if dialmode != "Manual":
+            input("Make sure the camera is on and the exposure dial is set to M, then press enter.")
+
+    # PARTIAL_1
+    while seconds_to(partial_1) > 0:
+        try:
+            print("\rWaiting to shoot Partial 1 in %s" % math.floor(seconds_to(partial_1)), end=" seconds...      ", flush=True)
+            time.sleep(min(1, seconds_to(partial_1)))
+        except ValueError as e:
+            pass
+    print("")
+
+    while seconds_to(remove_filter) > 0:
+        c.shoot("1/640", None)
+        if seconds_to(remove_filter) > 20:
+            next_bracket = datetime.now() + relativedelta(seconds=20)
+            while seconds_to(next_bracket) > 0:
+                print("\rPartial 1: Next bracket in %s seconds. Remove filter in %s" % 
+                      (math.floor(seconds_to(next_bracket)),math.floor(seconds_to(remove_filter))), end=" seconds.      ", flush=True)
+                try:
+                    time.sleep(min(1, seconds_to(next_bracket)))
+                except ValueError as e:
+                    pass
+        else:
+            print("\rPartial 1: Finished.", end="                                                                    ", flush=True)
+            break
+    print("")
+
+    # REMOVE FILTER
+    while seconds_to(remove_filter) > 0:
+        print("\rWaiting to remove filter in %s" % math.floor(seconds_to(remove_filter)), end=" seconds.                ", flush=True)
+        try:
+            time.sleep(min(1, seconds_to(remove_filter)))
+        except ValueError as e:
+            pass
+    if seconds_to(remove_filter) < 0 and seconds_to(replace_filter) > 0:
+        print("\r\nREMOVE FILTER!!!!\n")
+        play(remove_filter_audio)
+
+    # BAILEYS_BEADS_1
+    while seconds_to(bailys_beads_1) > 0:
+        print("\rWaiting to shoot Bailey's Beads in %s" % math.floor(seconds_to(bailys_beads_1)), end=" seconds...           ", flush=True)
+        try:
+            time.sleep(min(1, seconds_to(bailys_beads_1)))
+        except ValueError as e:
+            pass
+    print("")
+
+    while seconds_to(totality) > 0:
+        print("\rShooting Baileys Beads 1 for %s" % math.floor(seconds_to(totality)), end=" seconds.           ", flush=True)
+        c.shoot("1/4000", "+/- 1")
+    print("")
+
+    while seconds_to(bailys_beads_2) > 0:
+        print("\rShooting Totality for %s" % math.floor(seconds_to(bailys_beads_2)), end=" seconds.           ", flush=True)
+        c.shoot("1/640", "+/- 1")
+        c.shoot("1/400", "+/- 1")
+    print("")
+
+    # BAILEYS_BEADS_2
+    while seconds_to(partial_2) > 0:
+        print("\rShooting Baileys Beads 2 for %s" % math.floor(seconds_to(partial_2)), end=" seconds. REPLACE FILTER AFTER!", flush=True)
+        c.shoot("1/4000", "+/- 1")
+    print("\nREPLACE FILTER!!!!!\n")
+    play(replace_filter_audio)    
+
+    # PARTIAL_2
+    while seconds_to(end) > 0:
+        c.shoot("1/640", None)
+        if seconds_to(end) > 20:
+            next_bracket = datetime.now() + relativedelta(seconds=20)
+            while seconds_to(next_bracket) > 0:
+                print("\rPartial 2: Next bracket in %s seconds. Done in %s" % 
+                      (math.floor(seconds_to(next_bracket)),math.floor(seconds_to(end))), end=" seconds.      ", flush=True)
+                try:
+                    time.sleep(min(1, seconds_to(next_bracket)))
+                except ValueError as e:
+                    pass
+        else:
+            print("\rPartial 2: Finished.", end="                                                                    ")
+            break
+    print("\nDONE!")
